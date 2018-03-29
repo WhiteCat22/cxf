@@ -19,6 +19,8 @@
 
 package org.apache.cxf.jaxrs.utils;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -90,6 +92,7 @@ import org.apache.cxf.common.util.PropertyUtils;
 import org.apache.cxf.common.util.ReflectionUtil;
 import org.apache.cxf.common.util.StringUtils;
 import org.apache.cxf.helpers.DOMUtils;
+import org.apache.cxf.helpers.IOUtils;
 import org.apache.cxf.interceptor.Fault;
 import org.apache.cxf.io.ReaderInputStream;
 import org.apache.cxf.jaxrs.JAXRSServiceImpl;
@@ -813,7 +816,7 @@ public final class JAXRSUtils {
                                            Message message,
                                            OperationResourceInfo ori)
         throws IOException, WebApplicationException {
-        InputStream is = message.getContent(InputStream.class);
+        InputStream is = copyAndGetEntityStream(message);
         if (is == null) {
             Reader reader = message.getContent(Reader.class);
             if (reader != null) {
@@ -956,8 +959,9 @@ public final class JAXRSUtils {
             m.put(FormUtils.FORM_PARAM_MAP, params);
 
             if (mt == null || mt.isCompatible(MediaType.APPLICATION_FORM_URLENCODED_TYPE)) {
+                InputStream is = copyAndGetEntityStream(m);
                 String enc = HttpUtils.getEncoding(mt, StandardCharsets.UTF_8.name());
-                String body = FormUtils.readBody(m.getContent(InputStream.class), enc);
+                String body = FormUtils.readBody(is, enc);
                 FormUtils.populateMapFromStringOrHttpRequest(params, m, body, enc, decode);
             } else {
                 if ("multipart".equalsIgnoreCase(mt.getType())
@@ -1818,4 +1822,15 @@ public final class JAXRSUtils {
         return errorMessage;
     }
 
+    private static InputStream copyAndGetEntityStream(Message m) {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try {
+            IOUtils.copy(m.getContent(InputStream.class), baos);
+        } catch (IOException e) {
+            throw ExceptionUtils.toInternalServerErrorException(e, null);
+        }
+        final byte[] copiedBytes = baos.toByteArray();
+        m.setContent(InputStream.class, new ByteArrayInputStream(copiedBytes));
+        return new ByteArrayInputStream(copiedBytes);
+    }
 }
